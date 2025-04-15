@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    container_name: gpt4.1-app
+    ports:
+      - "8000:8000"
+    env_file: .env
+    restart: unless-stopped

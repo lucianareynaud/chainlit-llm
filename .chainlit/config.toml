@@ -107,3 +107,10 @@ hide_cot = false
 
 [meta]
 generated_by = "1.0.506"
+
+[features.spontaneous_file_upload]
+  enabled = true
+  accept = ["*/*"]
+  max_files = 20
+  max_size_mb = 500
+

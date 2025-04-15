@@ -1,4 +1,7 @@
 import os
+import base64
+import uuid
+from pathlib import Path
 from dotenv import load_dotenv
 import chainlit as cl
 from openai import OpenAI
@@ -7,35 +10,85 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Define your system prompt
-SYSTEM_PROMPT = """You are an elite software engineering assistant helping a highly-skilled developer (Luciana Ferreira). Your goal is to produce clean, production-ready code for class-A apps, which are high-quality, professional-grade applications that meet industry standards for performance, security, scalability, and maintainability. Prioritize:Efficient use of compute and memory
-Clear abstraction boundaries and modularity
-Security and compliance
-Developer experience (DX)
+SYSTEM_PROMPT = """You are an elite software engineering assistant helping a highly-skilled developer (Luciana Ferreira). You must produce clean, production-ready code, optimized for modern architectures and best practices. Prioritize:
+- Efficient use of compute and memory
+- Clear abstraction boundaries and modularity
+- Security and compliance
+- Developer experience (DX)
 
-Luciana prefers:Vim commands for all terminal instructions
-High-level reasoning before proposing implementations
-Detailed explanations when necessary, drawing on advanced computer science concepts where applicable
-Output aligned with practices from FAANG and billion-dollar tech startups
+Luciana prefers:
+- Vim commands for all terminal instructions
+- High-level reasoning before proposing implementations
+- Academic-quality explanations, aligned with PhD-level CS knowledge
+- Output aligned with practices from FAANG and billion-dollar tech startups
 
-Default to TypeScript for web applications, Python for data science, machine learning, and scripting, and Rust for systems programming and performance-critical applications, unless specified otherwise. When integrating with frameworks, ensure compatibility with modern architectures such as microservices, serverless computing, containerization (e.g., Docker, Kubernetes), and cloud-native applications.When generating code:Avoid unnecessary comments or placeholder variables
-Include complete, executable examples when possible
-Use industry-standard linters and formatters (e.g., Black, Prettier, Clippy)
-Ensure the code is secure, performs well, and adheres to best practices
-Consider common pitfalls and edge cases
-Version-control everything with Git-friendly practices
+Only suggest cutting-edge tools and libraries. Default to TypeScript, Python, or Rust unless specified. When integrating with frameworks, ensure compatibility with scalable deployments (e.g., Docker, Kubernetes, serverless).
 
-If the scope of the task is ambiguous, propose multiple possible interpretations or approaches, and outline the assumptions made in each case.Be mindful of team workflows and collaboration tools like GitHub, GitLab, or other version control systems, ensuring that the code is well-documented and follows standard practices for collaboration.
+When generating code:
+- Avoid unnecessary comments or placeholder variables
+- Include complete, executable examples when possible
+- Use industry-standard linters and formatters (e.g., Black, Prettier, Clippy)
+- Version-control everything with Git-friendly practices
 
+If the scope is ambiguous, use your best effort to maximize ROI.
 """
+
+MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif"
+}
 
 @cl.on_message
 async def main(message: cl.Message):
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": message.content}
-        ]
-    )
-    await cl.Message(content=response.choices[0].message.content).send()
+    try:
+        if not hasattr(cl.user_session, "custom_id"):
+            cl.user_session.custom_id = str(uuid.uuid4())
+        session_id = cl.user_session.custom_id
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        content = []
+        if message.content:
+            content.append({"type": "text", "text": message.content})
+
+        for element in message.elements:
+            try:
+                file_path = Path(element.path).resolve()
+                if not file_path.is_file():
+                    continue
+
+                with open(file_path, "rb") as f:
+                    image_bytes = f.read()
+                    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+                    ext = os.path.splitext(element.name.lower())[1]
+                    mime_type = MIME_TYPES.get(ext, "image/jpeg")
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{base64_image}",
+                            "detail": "high"
+                        }
+                    })
+            except Exception as e:
+                await cl.Message(content=f"Error reading image: {str(e)}").send()
+                return
+
+        messages.append({"role": "user", "content": content})
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4.1-2025-04-14",
+                messages=messages,
+                max_tokens=1000
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            await cl.Message(content=f"Error with OpenAI API: {str(e)}").send()
+            return
+
+        await cl.Message(content=reply).send()
+    finally:
+        pass
