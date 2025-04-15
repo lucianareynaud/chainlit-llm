@@ -82,7 +82,7 @@ async def main(message: cl.Message):
             response = client.chat.completions.create(
                 model="gpt-4.1-2025-04-14",
                 messages=messages,
-                max_tokens=1000
+                max_tokens=32768
             )
             reply = response.choices[0].message.content
         except Exception as e:
